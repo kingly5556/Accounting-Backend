@@ -1,0 +1,7 @@
+node_modules/
+dist/
+.env
+*.tsbuildinfo
+
+# local-only credentials scratch file (never commit secrets)
+DB_CREDENTIALS.txt

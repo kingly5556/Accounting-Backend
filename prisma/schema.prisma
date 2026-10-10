@@ -1,0 +1,101 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum AccountType {
+  ASSET
+  LIABILITY
+  EQUITY
+  REVENUE
+  EXPENSE
+}
+
+model Account {
+  id         String        @id @default(cuid())
+  code       String        @unique // "1300"
+  name       String // "สินค้าคงเหลือ"
+  type       AccountType
+  parentId   String?
+  parent     Account?      @relation("AccountTree", fields: [parentId], references: [id])
+  children   Account[]     @relation("AccountTree")
+  isPostable Boolean       @default(true) // group headers (e.g. 1000) cannot be posted to
+  isActive   Boolean       @default(true)
+  lines      JournalLine[]
+
+  @@map("accounts")
+}
+
+enum JournalStatus {
+  DRAFT
+  POSTED
+  REVERSED
+}
+
+model JournalEntry {
+  id           String        @id @default(cuid())
+  entryNo      String?       @unique // JE-2026-10-0001 — null while DRAFT, assigned at post
+  entryDate    DateTime // accounting date (determines the period)
+  description  String
+  status       JournalStatus @default(DRAFT)
+  // Origin of the entry — prevents double-posting of the same upstream event.
+  sourceModule String? // "stock" | null (manual)
+  sourceType   String? // "GOODS_RECEIPT" | "STOCK_ADJUSTMENT" | "OPENING_BALANCE"
+  sourceId     String?
+  sourceRef    Json? // e.g. { poId } for deep links back to the origin document
+  reversalOfId String?       @unique
+  reversalOf   JournalEntry? @relation("Reversal", fields: [reversalOfId], references: [id])
+  reversedBy   JournalEntry? @relation("Reversal")
+  createdBy    String
+  postedBy     String?
+  postedAt     DateTime?
+  createdAt    DateTime      @default(now())
+  lines        JournalLine[]
+
+  @@unique([sourceModule, sourceType, sourceId])
+  @@index([status, entryDate])
+  @@map("journal_entries")
+}
+
+model JournalLine {
+  id        String       @id @default(cuid())
+  entryId   String
+  entry     JournalEntry @relation(fields: [entryId], references: [id], onDelete: Cascade)
+  accountId String
+  account   Account      @relation(fields: [accountId], references: [id])
+  debit     BigInt       @default(0) // satang
+  credit    BigInt       @default(0) // satang
+  memo      String?
+
+  @@index([accountId])
+  @@index([entryId])
+  @@map("journal_lines")
+}
+
+enum PeriodStatus {
+  OPEN
+  CLOSED
+}
+
+model AccountingPeriod {
+  id       String       @id @default(cuid())
+  period   String       @unique // "2026-10"
+  status   PeriodStatus @default(OPEN)
+  closedBy String?
+  closedAt DateTime?
+
+  @@map("accounting_periods")
+}
+
+// Monthly document counter. Lock this row (SELECT ... FOR UPDATE) while posting so
+// entryNo runs gap-free even when two entries are posted concurrently.
+model DocumentCounter {
+  key    String @id // "JE-2026-10"
+  lastNo Int    @default(0)
+
+  @@map("document_counters")
+}
