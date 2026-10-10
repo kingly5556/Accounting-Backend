@@ -19,6 +19,7 @@
   "dependencies": {
     "@prisma/client": "^6.1.0",
     "cors": "^2.8.5",
+    "exceljs": "^4.4.0",
     "express": "^4.21.2",
     "jose": "^6.2.12",
     "zod": "^3.24.1"

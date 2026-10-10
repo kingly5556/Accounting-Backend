@@ -3,6 +3,8 @@ import { app } from "../src/app.js";
 
 export type TestServer = {
   call: (method: string, path: string, opts?: { token?: string; body?: unknown; headers?: Record<string, string> }) => Promise<{ status: number; body: any }>;
+  /** Binary download (e.g. .xlsx). */
+  raw: (path: string, token: string) => Promise<{ status: number; type: string | null; disposition: string | null; buffer: Buffer }>;
   close: () => Promise<void>;
 };
 
@@ -29,6 +31,15 @@ export async function startServer(): Promise<TestServer> {
         // non-JSON body (e.g. 204) — leave as text
       }
       return { status: res.status, body };
+    },
+    async raw(path, token) {
+      const res = await fetch(base + path, { headers: { Authorization: `Bearer ${token}` } });
+      return {
+        status: res.status,
+        type: res.headers.get("content-type"),
+        disposition: res.headers.get("content-disposition"),
+        buffer: Buffer.from(await res.arrayBuffer()),
+      };
     },
     close: () => new Promise((r) => server.close(() => r())),
   };

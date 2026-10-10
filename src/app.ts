@@ -7,6 +7,7 @@ import { accountRouter } from "./modules/account/account.routes.js";
 import { authRouter } from "./modules/auth/auth.routes.js";
 import { journalRouter } from "./modules/journal/journal.routes.js";
 import { periodRouter } from "./modules/period/period.routes.js";
+import { yearEndRouter } from "./modules/period/year-end.routes.js";
 import { postingsRouter } from "./modules/posting-rules/postings.routes.js";
 import { reportingRouter } from "./modules/reporting/reporting.routes.js";
 
@@ -31,6 +32,7 @@ app.use("/api", authRouter);
 app.use("/api/accounts", accountRouter);
 app.use("/api/journal-entries", journalRouter);
 app.use("/api/periods", periodRouter);
+app.use("/api/year-end", yearEndRouter);
 app.use("/api/reports", reportingRouter);
 // Service-to-service (X-Service-Key), not a user endpoint.
 app.use("/api/postings", postingsRouter);
