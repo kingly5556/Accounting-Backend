@@ -1,7 +1,7 @@
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import cors from "cors";
 import express from "express";
+import { prisma } from "./shared/database/prisma.js";
 import { errorHandler } from "./shared/middleware/error-handler.js";
 import { accountRouter } from "./modules/account/account.routes.js";
 import { authRouter } from "./modules/auth/auth.routes.js";
@@ -21,10 +21,23 @@ app.set("json replacer", (_key: string, value: unknown) =>
   typeof value === "bigint" ? value.toString() : value
 );
 
-app.use(cors());
+// No CORS: browsers only ever talk to ERPHUB (same origin), which calls this API
+// server-to-server; the Stock worker calls /api/postings server-to-server too.
 app.use(express.json());
 
-app.get("/health", (_req, res) => res.json({ ok: true }));
+// /health          -> process is up (cheap; used by Render's health check)
+// /health?deep=1   -> also runs SELECT 1, which wakes a sleeping Neon database
+// `commit` shows which build is running (Render sets RENDER_GIT_COMMIT).
+app.get("/health", async (req, res) => {
+  const commit = process.env.RENDER_GIT_COMMIT?.slice(0, 7) ?? "local";
+  if (req.query.deep !== "1") return res.json({ ok: true, commit });
+  try {
+    await prisma.$queryRaw`SELECT 1`;
+    return res.json({ ok: true, db: "ok", commit });
+  } catch {
+    return res.status(503).json({ ok: false, db: "down", commit });
+  }
+});
 
 // All API routes live under /api/* so they never collide with the SPA's own client
 // routes. Mounted at the root here; ERPHUB's proxy puts this behind /erp/accounting/...
@@ -39,10 +52,17 @@ app.use("/api/postings", postingsRouter);
 
 // Serve the built SPA from the sibling Accounting-Frontend repo (override with
 // FRONTEND_DIST). Anything that is not /health or /api/* falls through to index.html.
-const frontendDist =
-  process.env.FRONTEND_DIST ?? path.resolve(__dirname, "../../Accounting-Frontend/dist");
-app.use(express.static(frontendDist));
+// Resolved to an absolute path: res.sendFile() rejects relative paths, and on Render
+// FRONTEND_DIST is the relative "frontend/dist" (resolved against the working directory).
+const frontendDist = path.resolve(
+  process.env.FRONTEND_DIST ?? path.resolve(__dirname, "../../Accounting-Frontend/dist")
+);
+// Vite puts content-hashed bundles in /assets, so they can be cached for a week;
+// index.html must always be revalidated so a new deploy is picked up.
+app.use("/assets", express.static(path.join(frontendDist, "assets"), { maxAge: "7d", immutable: true }));
+app.use(express.static(frontendDist, { maxAge: 0 }));
 app.get(/^(?!\/api\/).*/, (_req, res, next) => {
+  res.setHeader("Cache-Control", "no-cache");
   res.sendFile(path.join(frontendDist, "index.html"), (err) => {
     if (err) next(err);
   });
